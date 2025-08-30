@@ -1,4 +1,4 @@
-FROM ghcr.io/astral-sh/uv:latest
+FROM astral/uv:bookworm-slim
 
 WORKDIR /app
 
