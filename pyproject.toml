@@ -2,6 +2,7 @@
 name = "knowleadge_base_discord_bot"
 version = "0.1.0"
 dependencies = [
+    "discord>=2.3.2",
     "fastapi[all]",
     "uvicorn[standard]",
 ]
