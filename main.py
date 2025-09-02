@@ -1,110 +1,121 @@
 import discord
 from discord import app_commands, ui
 import os
-import aiohttp
 from dotenv import load_dotenv
 
-# .env 파일에서 환경 변수 로드
+# .env 로드
 load_dotenv()
-
 DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
-GITHUB_ACCESS_TOKEN = os.getenv("GITHUB_ACCESS_TOKEN")
 
 # 인텐트 설정
 intents = discord.Intents.default()
 intents.message_content = True
 
-class TaskView(ui.View):
-    """'새 프로젝트 시작' 버튼을 포함하는 뷰"""
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    @ui.button(label="새 프로젝트 시작 ➕", style=discord.ButtonStyle.success, custom_id="start_new_project_button")
-    async def start_project(self, interaction: discord.Interaction, button: ui.Button):
-        thread_name = f"{interaction.user.display_name}님의 새 프로젝트"
-        thread = await interaction.channel.create_thread(
-            name=thread_name,
-            type=discord.ChannelType.public_thread
-        )
-        await interaction.response.send_message(f'{thread.mention}에서 새 프로젝트를 시작하세요!', ephemeral=True)
-        await thread.send(f"{interaction.user.mention}, 안녕하세요! 어떤 프로젝트를 시작할까요?")
-
-class SetupModal(ui.Modal, title='초기 대시보드 설정'):
-    """README URL을 입력받기 위한 모달"""
-    readme_url = ui.TextInput(
-        label='GitHub 저장소 URL 또는 README Raw URL',
-        placeholder='https://github.com/user/repo'
-    )
-
-    def resolve_github_url(self, url: str) -> str:
-        """입력된 URL을 GitHub Raw 콘텐츠 URL로 변환합니다."""
-        if "raw.githubusercontent.com" in url:
-            return url
-        if "github.com" in url:
-            # .git 접미사 및 마지막 슬래시 제거
-            cleaned_url = url.removesuffix(".git").rstrip("/")
-            parts = cleaned_url.split("/")
-            if len(parts) >= 5:
-                user = parts[3]
-                repo = parts[4]
-                # 기본 브랜치를 main으로 가정
-                return f"https://raw.githubusercontent.com/{user}/{repo}/main/README.md"
-        return url # 변환 불가 시 원본 반환
+# --- Modals ---
+class NewProjectModal(ui.Modal, title='새 프로젝트 생성'):
+    project_name_en = ui.TextInput(label='프로젝트 영문명 (폴더명으로 사용)', placeholder='e.g., my_awesome_project', required=True)
+    short_description = ui.TextInput(label='한 줄 설명', style=discord.TextStyle.paragraph, placeholder='비워두시면 프로젝트 영문명을 기반으로 자동 생성됩니다.', required=False)
+    start_date = ui.TextInput(label='시작일 (YYYY-MM-DD, 생략 가능)', required=False)
+    target_date = ui.TextInput(label='목표일 (YYYY-MM-DD, 생략 가능)', required=False)
 
     async def on_submit(self, interaction: discord.Interaction):
-        raw_url = self.resolve_github_url(self.readme_url.value)
-        
-        headers = {}
-        if GITHUB_ACCESS_TOKEN:
-            headers["Authorization"] = f"token {GITHUB_ACCESS_TOKEN}"
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        guild = interaction.guild
 
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(raw_url, headers=headers) as response:
-                    if response.status == 200:
-                        readme_content = await response.text()
-                    else:
-                        await interaction.response.send_message(f"URL에서 콘텐츠를 가져오는 데 실패했습니다. (상태 코드: {response.status})", ephemeral=True)
-                        return
-        except Exception as e:
-            await interaction.response.send_message(f"URL 처리 중 오류 발생: {e}", ephemeral=True)
+        # 1. Active Projects 카테고리 찾기
+        category_name = "--- Active Projects ---"
+        category = discord.utils.get(guild.categories, name=category_name)
+        if not category:
+            await interaction.followup.send(f"오류: '{category_name}' 카테고리를 먼저 /setup으로 생성해야 합니다.")
             return
 
-        guild = interaction.guild
-        channel_name = "how-to-use"
-        existing_channel = discord.utils.get(guild.text_channels, name=channel_name)
-        if not existing_channel:
-            overwrites = {
-                guild.default_role: discord.PermissionOverwrite(send_messages=False),
-                guild.me: discord.PermissionOverwrite(send_messages=True)
-            }
-            channel = await guild.create_text_channel(channel_name, overwrites=overwrites)
-        else:
-            channel = existing_channel
+        # 2. 포럼 채널 생성
+        channel_name = f"proj-{self.project_name_en.value}"
+        try:
+            forum_channel = await guild.create_forum(name=channel_name, category=category)
+        except discord.Forbidden:
+            await interaction.followup.send("오류: 포럼 채널을 생성할 권한이 없습니다.")
+            return
+        except Exception as e:
+            await interaction.followup.send(f"채널 생성 중 오류 발생: {e}")
+            return
 
-        view = TaskView()
-        # 기존 메시지 삭제 후 새로 게시 (항상 최신 상태 유지)
-        await channel.purge(limit=100, check=lambda m: m.author == client.user)
-        await channel.send(readme_content, view=view)
-        await interaction.response.send_message(f"`#{channel_name}` 채널 설정이 완료되었습니다.", ephemeral=True)
+        # 3. 가이드라인 게시물 내용 생성
+        guideline_content = (
+            f"# {self.project_name_en.value}\n\n"
+            f"**설명**: {self.short_description.value or '(설명 없음)'}\n"
+            f"**시작일**: {self.start_date.value or '미지정'}\n"
+            f"**목표일**: {self.target_date.value or '미지정'}\n---"
+        )
 
+        # 4. 포럼에 첫 게시물(가이드라인) 작성 및 고정
+        try:
+            # 포럼 채널에서 스레드(게시물)를 생성합니다.
+            thread_with_message = await forum_channel.create_thread(name="README", content=guideline_content)
+            # 생성된 게시물(스레드)을 고정합니다.
+            await thread_with_message.thread.pin()
+        except Exception as e:
+            await interaction.followup.send(f"가이드라인 게시물 작성 또는 고정 중 오류 발생: {e}")
+            return
+
+        await interaction.followup.send(f"프로젝트 채널 {forum_channel.mention} 생성이 완료되었습니다.")
+
+# --- Bot Client ---
 class MyClient(discord.Client):
     def __init__(self, *, intents: discord.Intents):
         super().__init__(intents=intents)
         self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self):
-        await self.tree.sync()
+        my_guild = discord.Object(id=1411265287491158018)
+        self.tree.copy_global_to(guild=my_guild)
+        await self.tree.sync(guild=my_guild)
 
     async def on_ready(self):
         print(f'{self.user} (으)로 로그인했습니다.')
 
 client = MyClient(intents=intents)
 
-@client.tree.command(name="setup", description="초기 설정을 시작합니다.")
+# --- Slash Commands ---
+@client.tree.command(name="setup", description="서버에 봇의 기본 환경을 설정합니다.")
 @app_commands.default_permissions(administrator=True)
 async def setup_command(interaction: discord.Interaction):
-    await interaction.response.send_modal(SetupModal())
+    guild = interaction.guild
+    await interaction.response.defer(ephemeral=True, thinking=True)
+
+    for category_name in ["--- Active Projects ---", "--- Completed Projects ---"]:
+        if not discord.utils.get(guild.categories, name=category_name):
+            await guild.create_category(category_name)
+
+    channel_name = "how-to-use"
+    existing_channel = discord.utils.get(guild.text_channels, name=channel_name)
+    if not existing_channel:
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(send_messages=False, create_public_threads=False),
+            guild.me: discord.PermissionOverwrite(send_messages=True, manage_messages=True)
+        }
+        channel = await guild.create_text_channel(channel_name, overwrites=overwrites)
+    else:
+        channel = existing_channel
+
+    try:
+        with open("HOW_TO_USE.md", "r", encoding="utf-8") as f:
+            how_to_use_content = f.read()
+    except FileNotFoundError:
+        await interaction.followup.send("HOW_TO_USE.md 파일을 찾을 수 없습니다.")
+        return
+
+    async for message in channel.history(limit=100):
+        if message.author == client.user:
+            await message.delete()
+            
+    await channel.send(how_to_use_content)
+    
+    await interaction.followup.send(f"`#{channel_name}` 채널과 카테고리 설정이 완료되었습니다.")
+
+@client.tree.command(name="new_project", description="새로운 프로젝트를 생성합니다.")
+async def new_project_command(interaction: discord.Interaction):
+    await interaction.response.send_modal(NewProjectModal())
 
 # 봇 실행
 client.run(DISCORD_BOT_TOKEN)

@@ -23,3 +23,24 @@
 ## 시작하기
 
 서버의 관리자는 `#how-to-use` 채널에서 `/setup` 명령어를 실행하여 봇의 기능(대시보드, 버튼 등)을 활성화할 수 있습니다.
+
+## 필수 권한 설정
+
+`OAuth2 -> URL Generator` 페이지에서 봇 초대 링크를 생성할 때, 다음 스코프와 권한을 반드시 선택해야 합니다.
+
+### 1. Scopes
+- `bot`
+- `applications.commands`
+
+### 2. Bot Permissions
+- **General Permissions**
+  - `View Channels`
+  - `Read Message History`
+- **Text Permissions**
+  - `Send Messages`
+  - `Send Messages in Threads`
+  - `Manage Messages` (대시보드 메시지 관리용)
+  - `Create Public Threads`
+  - `Manage Threads`
+  - `Manage Channels`
+  - `Manage Webhooks` (향후 페르소나별 메시지 전송 기능용)
