@@ -415,7 +415,7 @@ wheels = [
 ]
 
 [[package]]
-name = "knowleadge-base-discord-bot"
+name = "knowleadge-base-discord"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

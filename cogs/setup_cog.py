@@ -10,7 +10,7 @@ class SetupCog(commands.Cog):
     @app_commands.default_permissions(administrator=True)
     async def setup_command(self, interaction: discord.Interaction):
         guild = interaction.guild
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        await interaction.response.defer(thinking=True)
 
         # 1. 카테고리 생성
         for category_name in ["--- Active Projects ---", "--- Completed Projects ---"]:
