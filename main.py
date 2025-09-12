@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 # .env 로드
 load_dotenv()
 DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
+N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL") # n8n 웹훅 URL 추가
 
 # 인텐트 설정
 intents = discord.Intents.default()
@@ -23,7 +24,7 @@ class MyBot(commands.Bot):
             if filename.endswith('.py'):
                 await self.load_extension(f'cogs.{filename[:-3]}')
         
-        # 로드된 모든 커맨드를 특정 서버에 즉시 동기화 (개발용)
+        # 특정 서버에만 커맨드를 즉시 동기화 (개발용)
         my_guild = discord.Object(id=1411265287491158018)
         self.tree.copy_global_to(guild=my_guild)
         await self.tree.sync(guild=my_guild)
@@ -36,9 +37,26 @@ class MyBot(commands.Bot):
         if message.author == self.user:
             return
         
-        # 스레드 안의 메시지만 n8n으로 전달 (향후 구현)
-        if isinstance(message.channel, discord.Thread):
-            print(f"Thread message from {message.author}: {message.content}")
+        # 봇이 멘션되었거나, 스레드 안의 메시지인 경우에만 처리
+        is_mentioned = self.user.mentioned_in(message)
+        is_in_thread = isinstance(message.channel, discord.Thread)
+
+        if is_mentioned or is_in_thread:
+            # 나중에 n8n으로 보낼 데이터 (지금은 콘솔에 출력)
+            payload = {
+                "userId": message.author.id,
+                "userName": message.author.name,
+                "channelId": message.channel.id,
+                "message": message.content,
+                "isMentioned": is_mentioned,
+                "isThread": is_in_thread
+            }
+            print(f"[TO n8n] {payload}")
+            
+            # n8n 웹훅 호출 로직 (향후 구현)
+            # async with aiohttp.ClientSession() as session:
+            #     await session.post(N8N_WEBHOOK_URL, json=payload)
+
             await message.add_reaction("✅") # 접수 확인 표시
 
 async def main():
