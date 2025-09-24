@@ -3,6 +3,7 @@ name = "knowleadge_base_discord"
 version = "0.1.0"
 dependencies = [
     "discord>=2.3.2",
+    "fastapi-mcp @ git+https://github.com/euoom/fastapi_mcp.git",
     "fastapi[all]",
     "uvicorn[standard]",
 ]

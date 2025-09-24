@@ -13,7 +13,7 @@ class SetupCog(commands.Cog):
         await interaction.response.defer(thinking=True)
 
         # 1. 카테고리 생성
-        for category_name in ["--- Active Projects ---", "--- Completed Projects ---"]:
+        for category_name in ["Active Projects", "Completed Projects"]:
             if not discord.utils.get(guild.categories, name=category_name):
                 await guild.create_category(category_name)
 
